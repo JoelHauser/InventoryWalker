@@ -122,6 +122,24 @@ be a second writer racing the first, and it would need verifying against a mod t
 have installed. The passthrough adds no packets, patches nothing FIKA patches, and needs no FIKA
 reference. **Prefer the vanilla path for anything another mod might be reading.**
 
+## Sprint, jump and crouch stay blocked -- verified, not assumed
+
+"WASD only" is not something this mod enforces beyond the axes. The commands are blocked by the
+game, and it is worth having read it rather than assuming it.
+
+`InputNode`'s static ctor builds the one global allow-list, and it holds exactly five commands:
+`MakeScreenshot` (87), `ShowConsole` (88), `ToggleInventory` (36), `ToggleTalk` (122) and
+`StopTalk` (123). `GetDefaultBlockResult` returns `1` (remove the command) for anything not in it.
+
+`InventoryScreen.TranslateCommand` special cases two: `Escape` (55) and `ToggleInventory` (36)
+both call `ScreenController.CloseScreen()` and return `2`, which clears the whole command list for
+that frame. Everything else falls through to `GetDefaultBlockResult`.
+
+So `ToggleSprinting` (23), `Jump` (39), `ToggleDuck` (22), `ToggleProne` (27) and the lean
+commands (65, 66) are all removed while the screen is open, and this mod does nothing to change
+that. Note also that the closing path returns `2` and clears *commands*; it never touches the
+axes array, which is one more reason closing cannot interrupt a held direction.
+
 ## The tabs question
 
 Every tab along the top of the inventory is `EFT.UI.EInventoryTab`: `Overall, Gear, Health,
