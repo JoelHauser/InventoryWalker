@@ -4,9 +4,11 @@ using BepInEx.Logging;
 namespace InventoryWalker
 {
     /// <summary>
-    /// The one patch. A prefix on <c>UIScreen.TranslateAxes(ref float[] axes)</c>.
+    /// The first of two patches. A prefix on <c>UIScreen.TranslateAxes(ref float[] axes)</c>.
+    /// The second, <see cref="OwnerAxesPatch"/>, deals with the flag that stops the player's own
+    /// node once the axes get there; 0.1.0 shipped with this one alone and the player stood still.
     ///
-    /// How the freeze works in vanilla, read out of the client's IL:
+    /// How the first half of the freeze works in vanilla, read out of the client's IL:
     ///
     ///   1. <c>InputManager.Update</c> asks the input source to fill the axes array. That source
     ///      zeroes the whole array and refills it from the current state of every bound axis,
@@ -17,11 +19,12 @@ namespace InventoryWalker
     ///   3. <c>InputNode.TranslateInput</c> calls its own <c>TranslateAxes</c> only
     ///      <c>if (axes != null)</c>.
     ///   4. <c>UIScreen.TranslateAxes</c> is, in its entirety, <c>axes = null;</c>. Every node
-    ///      after it, <c>GamePlayerOwner</c> included, is therefore skipped. That is the freeze.
+    ///      after it, <c>GamePlayerOwner</c> included, is therefore skipped.
     ///
-    /// So the fix is not to unblock a flag or to drive the player ourselves. It is to decline to
-    /// null the array for this one screen, after flattening the axes we do not want. The player
-    /// then moves down its ordinary path: <c>GamePlayerOwner.TranslateAxes</c> ->
+    /// So the fix here is not to drive the player ourselves. It is to decline to null the array
+    /// for this one screen, after flattening the axes we do not want. With the second patch
+    /// lifting the owner's flag, the player then moves down its ordinary path:
+    /// <c>GamePlayerOwner.TranslateAxes</c> ->
     /// <c>PlayerOwner.TranslateAxes</c> -> <c>PlayerInputTranslator.TranslateAxes</c> ->
     /// <c>Player.Move</c> -> <c>MovementContext</c>, which is also what any co-op replication
     /// reads, so movement synchronises without this mod knowing anything about it.
@@ -38,7 +41,37 @@ namespace InventoryWalker
         /// </summary>
         private static bool _engaged;
 
+        /// <summary>
+        /// The frame the axes last passed through the inventory screen. What
+        /// <see cref="OwnerAxesPatch"/> checks before lifting anything, so the flag is only ever
+        /// lifted for axes this gate let through, never for a cutscene or a scripted zone.
+        /// </summary>
+        private static int _passedFrame = int.MinValue;
+
+        /// <summary>
+        /// Bumped each time the gate opens, so the second patch can log once per opening.
+        /// </summary>
+        internal static int Engagement { get; private set; }
+
+        /// <summary>
+        /// The inventory screen the axes last passed through. What <see cref="LootRange"/> closes;
+        /// only trusted together with <see cref="PassedRecently"/>.
+        /// </summary>
+        internal static object LastScreen { get; private set; }
+
         private static ManualLogSource _log;
+
+        /// <summary>
+        /// Whether the axes came through the inventory gate this frame or the one before. One
+        /// frame of slack because the order the owner and the screen are visited in has not been
+        /// seen live; if the owner runs first, the stamp it sees is the previous frame's. Nothing
+        /// lingers past that: closing the inventory stops the stamp, and the flag goes back to
+        /// false when the battle UI's own controller runs anyway.
+        /// </summary>
+        internal static bool PassedRecently()
+        {
+            return UnityEngine.Time.frameCount - _passedFrame <= 1;
+        }
 
         internal static void SetLogger(ManualLogSource log)
         {
@@ -75,6 +108,8 @@ namespace InventoryWalker
                 }
 
                 AxisGate.KeepMovementOnly(axes);
+                _passedFrame = UnityEngine.Time.frameCount;
+                LastScreen = __instance;
                 Note(true);
                 return false;
             }
@@ -99,6 +134,11 @@ namespace InventoryWalker
             }
 
             _engaged = engaged;
+            if (engaged)
+            {
+                Engagement++;
+            }
+
             _log.LogInfo(engaged
                 ? "Movement passing through to the player (inventory open in raid)."
                 : "Movement back on the vanilla path.");

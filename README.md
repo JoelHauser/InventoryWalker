@@ -10,10 +10,9 @@ Mouse look, leaning and sprinting stay blocked while the inventory is open, exac
 in vanilla. Your mouse belongs to the cursor there, and the camera swinging while you drag an
 item would be unusable.
 
-> **0.1.0 has not been run in the game yet.** It is built from a close reading of the client and
-> covered by 97 tests, but tests are not a raid. If you install it, you are the first person to
-> try it. It is client side only and writes nothing to your profile, so the worst case is that it
-> does nothing and you delete the DLL, but go in expecting a first run rather than a finished mod.
+> **0.1.0 did not work in game.** It removed one of the two things that freeze you with the
+> inventory open. 0.2.0 removed both and walks in game. **0.3.0 adds the loot range below and has
+> not been run in the game yet.** Client side only; nothing is written to your profile.
 
 ## What it covers
 
@@ -26,21 +25,34 @@ item would be unusable.
   menus, switch tabs, all while walking. None of it interrupts a held key.
 - Right click menus and Inspect windows too. Open an item's stats, read them, close them again,
   all while walking, and start or stop moving freely with the window open.
+- **Loot range.** When you are looting a bag, a body or a container, walking more than 3 m from
+  it closes the loot view, the same as pressing Tab. Your own Tab inventory has no range. Change
+  the distance, or set it to 0 to turn the limit off, with **Loot range in metres** in the
+  configuration manager (F12).
 
 Out of raid, nothing changes. The hideout character screen is the same screen internally, so the
 mod checks for a live raid player before doing anything.
 
 ## Install
 
-Download `InventoryWalker_V0.1.0.zip` from the
+Download `InventoryWalker_V0.3.0.zip` from the
 [releases page](https://github.com/JoelHauser/InventoryWalker/releases) and unzip it over your SPT
 folder, so that `InventoryWalker.dll` lands in `BepInEx\plugins`. Client side only; there is no
 server half and nothing is written to your profile.
 
-If it is working, the client log carries one line the first time you open your inventory in a
-raid: `Movement passing through to the player (inventory open in raid)`. If the plugin could not
-find what it needed in the client it says so at startup and patches nothing, leaving the game
-exactly as it was.
+If it is working, `BepInEx\LogOutput.log` shows two lines when you open your inventory in a raid:
+
+```
+Movement passing through to the player (inventory open in raid).
+Lifting the screen's ignore-input flag for the player's movement.
+```
+
+Looting adds `Loot opened; measuring the range from <object>.`, and walking out of range adds
+`Walked X m from the loot (range 3.0 m); closing it.`
+
+If the plugin cannot find what it needs for walking, it says so at startup and patches nothing,
+leaving the game exactly as it was. If only the loot range cannot be set up, walking still works
+and the startup line ends `without the loot range.`
 
 To turn it off, use the BepInEx configuration manager (F12) and untick
 **Move while the inventory is open**. It takes effect on the next frame, without a restart.
@@ -59,8 +71,8 @@ session, either everyone has it or the people who do can reposition while the ot
 
 ## How it works
 
-The interesting part is that being frozen in the inventory is not a flag, a lock, or a disabled
-character controller. It is one line.
+Being frozen in the inventory takes two separate blocks, and the mod lifts both. The first is one
+line.
 
 EFT's input is a tree of nodes. Each frame the input system zeroes an array of axis values and
 refills it from the current state of every bound axis, then threads that array by reference down
@@ -72,17 +84,22 @@ player's own node. `InputNode.TranslateInput` will only hand the array to a node
 axes = null;
 ```
 
-Everything visited after the screen, the player included, is skipped. That is the freeze.
+Everything visited after the screen, the player included, is skipped.
 
-So this mod does not unblock a flag and does not drive the player itself. It puts a Harmony
-prefix on that one method, and when the screen is the in raid inventory it flattens the look,
-turn and lean slots, leaves the two movement slots exactly as the input system sampled them, and
-declines to null the array. The player then moves down its ordinary path:
+The mod puts a Harmony prefix on that method. When the screen is the in raid inventory, it
+flattens the look, turn and lean slots, leaves the two movement slots exactly as the input system
+sampled them, and declines to null the array.
+
+The second block is a flag. Opening any screen switches on the player node's "ignore input" flag,
+and the player's `TranslateAxes` returns on its first line while the flag is set. 0.1.0 missed
+this, and it is why 0.1.0 did nothing in game. The mod switches the flag off for that one call
+only and puts it back straight after, so everything else that reads the flag, commands included,
+still sees it set. The player then moves down its ordinary path:
 
 ```
 GamePlayerOwner.TranslateAxes
   -> PlayerOwner.TranslateAxes
-    -> PlayerInputTranslator.TranslateAxes
+    -> MoveInputTranslator.TranslateAxes
       -> Player.Move(new Vector2(axes[MoveX], axes[MoveY]))
         -> MovementContext
 ```
@@ -123,8 +140,12 @@ the key you are holding.
 
 - **Sprint, jump, crouch and lean stay blocked.** Those are commands rather than axes, and the
   screen still consumes them. WASD only, which is what was asked for.
-- **Looting a container opens the same screen**, so movement works there too. Whether walking out
-  of range closes the window gracefully is not verified.
+- **Loot range is measured in a straight line** from the bag, body or container, so it includes
+  height. If the game ever opens loot without the mod being able to tell what it belongs to,
+  the range is measured from where you stood when you opened it, and the log says so.
+- **Scripted "no input" moments.** Cutscenes and a few scripted zones use the same flag the
+  inventory does. With the inventory closed they stop you as normal. If one fires while your
+  inventory is already open, you can still walk until you close it.
 - **Sorting a stash and walking at once is not free.** You are moving while your eyes are in a
   menu, in a game where that gets you killed. That is the point of the mod, but it is worth
   knowing.

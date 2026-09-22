@@ -96,9 +96,14 @@ public readonly record struct PlayerInput(bool Delivered, float MoveX, float Mov
 ///        b. TranslateAxes, but only if (axes != null).
 ///        c. ShouldLockCursor, ALWAYS, outside that null check. The running result is combined
 ///           by taking the maximum, so ShowCursor (2) beats LockCursor (1) whatever the order.
-///   4. UIScreen.TranslateAxes assigns null to the array. That is the freeze, and it is the only
-///      thing this mod changes.
-///   5. Whatever axes survive reach PlayerInputTranslator.TranslateAxes, which calls
+///   4. UIScreen.TranslateAxes assigns null to the array. That is the first half of the freeze, and
+///      what InventoryAxisPatch changes.
+///   5. The player's node, GamePlayerOwner.TranslateAxes, opens with `if (flag) return;`. The flag
+///      is the owner's static ignore-input bool, which EftScreenController.PrepareEnvironment
+///      sets from the screen's IgnorePlayerInput, Enabled by default and not overridden by the
+///      inventory. So opening the inventory sets it. 0.1.0's model left this step out, which is
+///      how 97 tests passed for a mod that did nothing in game. OwnerAxesPatch lifts it.
+///   6. Whatever axes survive reach MoveInputTranslator.TranslateAxes, which calls
 ///      Player.Move(axes[MoveX], axes[MoveY]) and Player.Rotate(axes[TurnX], axes[TurnY]).
 ///
 /// This is a model, not the game. It proves the mod's logic behaves correctly against the
@@ -153,6 +158,17 @@ public sealed class InputPipeline
     /// </summary>
     public bool BlockingScreenOpen { get; set; }
 
+    /// <summary>
+    /// The owner's ignore-input flag set by something other than a screen: a cutscene or an
+    /// IgnorePlayerInputZone, the flag's two other writers. The mod must not lift these.
+    /// </summary>
+    public bool ScriptedIgnoreInput { get; set; }
+
+    /// <summary>
+    /// Whether OwnerAxesPatch is applied. Off reproduces 0.1.0, which patched the screen alone.
+    /// </summary>
+    public bool OwnerPatchApplied { get; set; } = true;
+
     /// <summary>The cursor state the last frame settled on.</summary>
     public int Cursor { get; private set; } = CursorResult.Ignore;
 
@@ -189,6 +205,7 @@ public sealed class InputPipeline
         commands.AddRange(alsoPressed);
 
         float[]? threaded = _axes;
+        bool passedThroughInventory = false;
         int cursor = CursorResult.Ignore;
         ScreenClosedThisFrame = false;
         InspectWindowClosedThisFrame = false;
@@ -229,6 +246,7 @@ public sealed class InputPipeline
                 if (AxisGate.ShouldPassThrough(ModEnabled, isInventoryScreen: true, RaidPlayerPresent))
                 {
                     AxisGate.KeepMovementOnly(threaded);
+                    passedThroughInventory = true;
                 }
                 else
                 {
@@ -245,6 +263,15 @@ public sealed class InputPipeline
         CommandsReachingPlayer = commands;
 
         if (threaded is null)
+        {
+            return PlayerInput.Blocked;
+        }
+
+        // 5. GamePlayerOwner.TranslateAxes: `if (flag) return;`. Any open screen (the inventory
+        // included) sets the flag, and so do the scripted writers. Only OwnerAxesPatch lifts it.
+        bool ignoreInput = InventoryOpen || BlockingScreenOpen || ScriptedIgnoreInput;
+        bool lifted = OwnerPatchApplied && AxisGate.ShouldLiftIgnoreInput(passedThroughInventory, ignoreInput);
+        if (ignoreInput && !lifted)
         {
             return PlayerInput.Blocked;
         }

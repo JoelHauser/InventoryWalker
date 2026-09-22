@@ -1,12 +1,47 @@
 # InventoryWalker -- working notes for Claude
 
-Lets the player walk with WASD while the in raid inventory is open. One BepInEx plugin, one
-Harmony prefix, one patched method. No server half, nothing written to the profile.
+Lets the player walk with WASD while the in raid inventory is open. One BepInEx plugin, **two**
+patches, one per gate. No server half, nothing written to the profile.
 
-**Nothing in this repo has executed in the game.** Everything below was read off the client's IL
-on 2026-09-22. The sibling repos' hardest lesson applies here in full: *an IL trace that predicts
-success is not evidence of success.* UltrawideStash flipped its Sorting Table conclusion four
-times, three of them confident and wrong, and the thing that settled it was starting the game.
+**0.1.0 was run in game on 2026-09-22 and did not work.** The prefix fired (its log line is in
+`LogOutput.log`) and the player stood still. There are two gates, and 0.1.0 opened only the
+first. See "The second gate, found by running it" below. 0.2.0 opens both and has **not** been
+run yet. The sibling repos' hardest lesson applied here in full: *an IL trace that predicts
+success is not evidence of success.* 97 tests passed for a mod that did nothing, because the test
+model was written from the same incomplete reading.
+
+## The second gate, found by running it
+
+Read off the **patched** `H:\SPT4.1.X` assembly with `ilspycmd` (in `~/.dotnet/tools`). That
+assembly has readable names, which makes it far quicker than the `\uXXXX` scripts below.
+
+1. Opening any screen runs `EftScreenManager.EftScreenController<,>.PrepareEnvironment`, which does
+   `Switch(IgnorePlayerInput, GamePlayerOwner.SetIgnoreInput)`.
+2. `IgnorePlayerInput` defaults to `EStateSwitcher.Enabled` (`LastState 0, Enabled 1, Disabled 2`).
+   Only three controllers override it: `TraderDialogScreen` and `EftBattleUIScreen` return
+   `Disabled`, and the hideout returns `LastState`. `InventoryScreenController` does not override it, so
+   opening the inventory calls `SetIgnoreInput(true)`. Going back to the battle UI sets it false.
+3. `SetIgnoreInput` is `ldarg.0; stsfld bool_0; ret`. `GamePlayerOwner.TranslateAxes` begins
+   `ldsfld bool_0; brfalse.s; ret`. So the axes 0.1.0 let through arrived at the player's node and
+   stopped on its first instruction.
+
+`OwnerAxesPatch` is a prefix and finalizer on `GamePlayerOwner.TranslateAxes`. It clears the flag
+for the length of that one call and puts it back in the finalizer, and it only does so when
+`InventoryAxisPatch` let axes through this frame or the previous one. Everything else that reads the flag,
+the owner's command handling included, still sees it set. The flag is found through the
+`stsfld` in `SetIgnoreInput`'s IL rather than by the name `bool_0`.
+
+What the 0.1.0 reading got wrong, beyond missing the flag:
+
+- The translator is `EFT.MoveInputTranslator` in the live client. `EFT.PlayerInputTranslator.TranslateAxes`
+  is empty. `PlayerOwner.TranslateAxes` calls the move translator, then the hands translator, then the player translator.
+- `InputNode.TranslateInput` calls `base.TranslateInput` (the **children**) **before** its own
+  `TranslateCommand`/`TranslateAxes`. Visit order is post-order, not just "newest first". The
+  one-frame slack in `InventoryAxisPatch.PassedRecently` exists because the relative order of the
+  screen and the owner has still not been seen live.
+
+**Known edge:** a cutscene or `IgnorePlayerInputZone` sets the same flag. If one fires *while the
+inventory is open*, the lift overrides it. With the inventory shut nothing is lifted.
 
 ## The box this was built on
 
@@ -26,10 +61,11 @@ dotnet test tests\InventoryWalker.Tests
 
 **Run those through PowerShell, not Bash** -- the `C:HUH` mangling trap, same as the siblings.
 
-## The finding the whole mod rests on
+## The first gate
 
-Being frozen with the inventory open is not a flag, a lock or a disabled character controller.
-It is one line of one method.
+This section was once titled "the finding the whole mod rests on" and said the freeze "is not a
+flag". That was wrong: the flag is the second gate (top of this file). This one is one line of
+one method.
 
 `EFT.UI.Screens.UIScreen.TranslateAxes(ref float[] axes)`, in its entirety:
 
@@ -140,7 +176,7 @@ commands (65, 66) are all removed while the screen is open, and this mod does no
 that. Note also that the closing path returns `2` and clears *commands*; it never touches the
 axes array, which is one more reason closing cannot interrupt a held direction.
 
-## The second gate that could have killed this, and did not
+## The translator's own gates, which could have killed this and did not
 
 `PlayerInputTranslator.TranslateAxes` has an early return **before** `Player.Move`:
 
@@ -260,12 +296,14 @@ cannot catch it breaking -- if this is ever in doubt, recheck the hierarchy, not
 
 ```
 src/InventoryWalker/
-  AxisGate.cs             PURE: the axis map, the filter, the three way gate. No game type.
+  AxisGate.cs             PURE: the axis map, the filter, both gates' decisions. No game type.
   GameTypes.cs            every game member, resolved by name at runtime, in one place
-  InventoryAxisPatch.cs   the one Harmony prefix, and the engaged/disengaged log line
-  InventoryWalkerPlugin.cs  BepInPlugin, config binding, manual patch
+  InventoryAxisPatch.cs   gate 1: prefix on UIScreen.TranslateAxes, and the engaged log line
+  OwnerAxesPatch.cs       gate 2: prefix+finalizer lifting GamePlayerOwner's ignore-input flag
+  InventoryWalkerPlugin.cs  BepInPlugin, config binding, manual patches (both or neither)
 
-tests/InventoryWalker.Tests/   xunit, 97 tests
+tests/InventoryWalker.Tests/   xunit, 109 tests
+  OwnerGateTests.cs       gate 2, including the 0.1.0 regression
   InputPipeline.cs        a model of the per frame delivery, written from the IL: axes, the
                           command list, and the cursor combination
   AxisGateTests.cs        the axis map, the filter, the gate truth table
@@ -309,11 +347,10 @@ instead. Half an hour went into that one; do not re-debug it.
 
 ## Traps hit while building this
 
-- **A method named for the thing it blocks may not be where the block lives.** The obvious
-  suspects were `GamePlayerOwner.SetIgnoreInput`, its three static ignore flags, and
-  `TranslateInventoryScreenInput`. None of them is the freeze. The freeze is a four instruction
-  base method on `UIScreen` that nobody would grep for. Follow the data, which here was the axes
-  array, rather than the names.
+- **Finding one block is not proof there is only one.** 0.1.0's notes said `SetIgnoreInput` and
+  its flags were "not the freeze", and that was **wrong**. `bool_0` is the second half of the freeze. The
+  mistake was stopping at the first block that explained the symptom and not following the axes
+  all the way to `Player.Move` once it was out of the way. Follow the data to the end.
 - **`\uXXXX` arguments vanish between Bash and PowerShell.** See above.
 - **`Grid`-style reasoning about "which node consumes the input" was the wrong model.** Nothing
   consumes anything; a reference is set to null and every later node opts out. Read
@@ -323,10 +360,11 @@ instead. Half an hour went into that one; do not re-debug it.
 
 In rough order of risk:
 
-1. **Does the prefix fire at all?** The log line `Movement passing through to the player
-   (inventory open in raid)` prints on the transition, once, not per frame. No line means the
-   patch did not take -- check the startup line that names the three resolved members.
-2. **Does the player actually move?** The whole point.
+1. **Do both patches fire?** On each opening in raid, expect `Movement passing through to the
+   player (inventory open in raid)` and then `Lifting the screen's ignore-input flag for the
+   player's movement.` The first line alone is exactly 0.1.0's failure. `nothing to lift` means the
+   flag was not the block after all.
+2. **Does the player actually move?** The whole point. 0.1.0: no.
 3. **FIKA.** Not installed on this box, so the co-op claim is reasoned, not observed. Watch for
    the local player moving smoothly while other clients see them stuttering or standing still,
    which would mean `MovementContext` is not being replicated from where this assumes.
@@ -382,17 +420,38 @@ on Inspect in a way the patch does not cover.
 
 ### The state as it stands
 
-**The plugin has not changed since the first commit.** `git diff <first> HEAD -- src/` is empty:
-four source files, one prefix, one patched method. Everything after it is tests and notes. That
-is a property of the design rather than an accident, because the patch works by declining to
-block rather than by handling cases, so there is no per case logic to extend. Anyone arriving
-here and looking for the feature work should not go hunting; this is all of it.
+0.1.0: 97 tests, 0 warnings, published as a GitHub release. **Run in game 2026-09-22: the prefix
+fired and the player did not move.** The second gate is the cause (see the top of this file).
 
-0.1.0: 97 tests, 0 warnings, references clean (`mscorlib`, `UnityEngine.CoreModule`, `BepInEx`,
-`0Harmony`), packed to `releases\InventoryWalker_V0.1.0.zip` and published as a GitHub release.
+0.2.0: adds `OwnerAxesPatch`. The test model now has the owner's flag, and
+`OwnerGateTests.TheScreenPatchAloneLeavesThePlayerStandingStill` reproduces the 0.1.0 result. 109
+tests, 0 warnings, references unchanged, packed to `releases\InventoryWalker_V0.2.0.zip` and
+installed on `H:\SPT4.1.X`. **Run in game 2026-09-22: works** (user report: "it works great").
 
-**Still never launched.** Every claim in this file is read off the IL and held up by a model of
-the input pipeline, not by the game. The single most useful next action is to install it on the
-live box, load a raid and press Tab while walking. The plugin logs one line per transition
-(`Movement passing through to the player`), so the client log alone settles whether the prefix
-fires, which is untested risk number one.
+0.3.0: adds the loot range (`LootRange.cs`), at the user's request. Looting a bag, body or container
+and walking more than 3 m (config **Loot range in metres**, 0 = off) from it closes the screen.
+118 tests, 0 warnings. **Not yet run in game.**
+
+How it is built, all read off the live assembly:
+
+- Every raid loot source opens through `EftGamePlayerOwner.ShowInventoryScreenLoot(CompoundItem loot,
+  Action callback, bool isFakeContainer)`. The callers are in `InteractionContextHelper`:
+  `LootItem` "Search" and armor "MODDING", and `OnContainerOpen` for a `LootableContainer`.
+  `Corpse : LootItem`. The Tab inventory never goes through this method.
+  `HideoutPlayerOwner : EftGamePlayerOwner` does, for the stash, so it is filtered out by type.
+- The anchor is `Player.InteractableObject`, accepted only if its `ItemOwner.RootItem` **is** `loot`.
+  `ClientPlayer` overrides `Interact`, so the callback may be delayed, and the player may have
+  looked away by then. If nothing matches, the range falls back to the player's position when they
+  opened it, and a log line says which was used.
+- The session ends when the game calls `callback`. The method's own exit action calls it on every
+  close path (Tab, Esc, death, and the "another screen is up" bail), so nothing polls to find out
+  whether the screen is still open.
+- The close is `InventoryScreen.TranslateCommand(ToggleInventory)`, the screen's own Tab handler:
+  `ScreenController.CloseScreen()`. It is invoked on the instance `InventoryAxisPatch` last passed
+  axes through, and only while `PassedRecently()`, so it never fires from under a dialog.
+  `GamePlayerOwner.CloseInventoryIfOpen` is `ToggleScreen(Inventory)`. Nothing in the client calls
+  it, and a toggle could open the screen instead of closing it, so it is not used.
+
+Log lines to check in a raid: `Loot opened; measuring the range from <object>.` on opening, and
+`Walked X m from the loot (range 3.0 m); closing it.` on walking away. The fallback wording
+(`no world object matched`) on a bag or body means the anchor match needs another look.

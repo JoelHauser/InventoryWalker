@@ -66,6 +66,32 @@ namespace InventoryWalker
         }
 
         /// <summary>
+        /// Whether to lift <c>GamePlayerOwner</c>'s ignore-input flag around its own
+        /// <c>TranslateAxes</c> call.
+        ///
+        /// The second gate. Opening any screen runs <c>EftScreenController.PrepareEnvironment</c>,
+        /// which calls <c>GamePlayerOwner.SetIgnoreInput(IgnorePlayerInput)</c>; the inventory's
+        /// controller inherits the default <c>Enabled</c>, and <c>GamePlayerOwner.TranslateAxes</c>
+        /// opens with <c>if (flag) return;</c>. So passing the axes through the screen reaches the
+        /// player's node and then stops at its first line. Lift only when the axes came through
+        /// the inventory gate, and only if the flag is actually set, so there is nothing to put
+        /// back otherwise.
+        /// </summary>
+        public static bool ShouldLiftIgnoreInput(bool passedThroughInventory, bool ignoreInputSet)
+        {
+            return passedThroughInventory && ignoreInputSet;
+        }
+
+        /// <summary>
+        /// Whether the player has walked far enough from the loot to close it. A range of zero or
+        /// less turns the limit off. Strictly beyond, so standing exactly on the line keeps it open.
+        /// </summary>
+        public static bool ShouldCloseLoot(float distance, float range)
+        {
+            return range > 0f && distance > range;
+        }
+
+        /// <summary>
         /// Zeroes every axis except the two movement slots, in place.
         ///
         /// In place rather than on a copy, because the array threaded through the input tree is
