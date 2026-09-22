@@ -371,6 +371,28 @@ claims living in prose. `InputPipeline` now carries the command list and the cur
 start-from-standstill, close-while-held and drag-while-moving rather than a representative one or
 two. 77 tests.
 
+Then context menus and Inspect windows, which is the section above. Same outcome again, but the
+closest call of the four: a right click menu is not an input node at all, and the Inspect window
+is one that happens to pass input through because of which base class it has.
+
 The lesson worth keeping: **a requirement that turns out to need no code still needs the reading.**
-Three of the four checks above had a plausible failure mode, and `IsAxesIgnored` in particular
-would have made the whole mod silently do nothing.
+Four of the five checks had a plausible failure mode. `IsAxesIgnored` would have made the whole
+mod silently do nothing, and an `InfoWindow` deriving from `UIScreen` would have frozen the player
+on Inspect in a way the patch does not cover.
+
+### The state as it stands
+
+**The plugin has not changed since the first commit.** `git diff <first> HEAD -- src/` is empty:
+four source files, one prefix, one patched method. Everything after it is tests and notes. That
+is a property of the design rather than an accident, because the patch works by declining to
+block rather than by handling cases, so there is no per case logic to extend. Anyone arriving
+here and looking for the feature work should not go hunting; this is all of it.
+
+0.1.0: 97 tests, 0 warnings, references clean (`mscorlib`, `UnityEngine.CoreModule`, `BepInEx`,
+`0Harmony`), packed to `releases\InventoryWalker_V0.1.0.zip` and published as a GitHub release.
+
+**Still never launched.** Every claim in this file is read off the IL and held up by a model of
+the input pipeline, not by the game. The single most useful next action is to install it on the
+live box, load a raid and press Tab while walking. The plugin logs one line per transition
+(`Movement passing through to the player`), so the client log alone settles whether the prefix
+fires, which is untested risk number one.

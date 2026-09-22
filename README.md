@@ -10,6 +10,11 @@ Mouse look, leaning and sprinting stay blocked while the inventory is open, exac
 in vanilla. Your mouse belongs to the cursor there, and the camera swinging while you drag an
 item would be unusable.
 
+> **0.1.0 has not been run in the game yet.** It is built from a close reading of the client and
+> covered by 97 tests, but tests are not a raid. If you install it, you are the first person to
+> try it. It is client side only and writes nothing to your profile, so the worst case is that it
+> does nothing and you delete the DLL, but go in expecting a first run rather than a finished mod.
+
 ## What it covers
 
 - Your own in raid inventory, on every tab along the top: Overall, Gear, Health, Skills, Map,
@@ -27,8 +32,15 @@ mod checks for a live raid player before doing anything.
 
 ## Install
 
-Unzip over your SPT folder, so that `InventoryWalker.dll` lands in `BepInEx\plugins`. Client side
-only; there is no server half and nothing is written to your profile.
+Download `InventoryWalker_V0.1.0.zip` from the
+[releases page](https://github.com/JoelHauser/InventoryWalker/releases) and unzip it over your SPT
+folder, so that `InventoryWalker.dll` lands in `BepInEx\plugins`. Client side only; there is no
+server half and nothing is written to your profile.
+
+If it is working, the client log carries one line the first time you open your inventory in a
+raid: `Movement passing through to the player (inventory open in raid)`. If the plugin could not
+find what it needed in the client it says so at startup and patches nothing, leaving the game
+exactly as it was.
 
 To turn it off, use the BepInEx configuration manager (F12) and untick
 **Move while the inventory is open**. It takes effect on the next frame, without a restart.
