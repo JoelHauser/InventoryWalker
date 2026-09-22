@@ -199,6 +199,51 @@ calls a hands input translator's `TranslateAxes` as well as the player's. Every 
 translator (`` through ``) has a **one instruction** `TranslateAxes`, a bare `ret`.
 Only `` does anything with axes. So nothing in the hands chain can act on what we pass.
 
+## What stacks on top of the inventory, and why it mattered
+
+Context menus and Inspect windows were the first requirement whose answer was **not** obvious in
+advance, and one of them came down to a coin flip BSG made years ago.
+
+| What the player opens | Type | In the input tree? | Effect on axes |
+| --- | --- | --- | --- |
+| Right click menu | `EFT.UI.SimpleContextMenu` | **No**, it is a `UIElement` | none, it cannot see input |
+| Inspect window | `EFT.UI.InfoWindow : Window'1` | yes | **none**, `Window.TranslateAxes` is a bare `ret` |
+| A modal dialog | some `UIScreen` | yes | nulls, and *should* |
+
+**The Inspect window is transparent by luck, not by design.** `InfoWindow` derives from
+`Window<T>`, and `Window<T>.TranslateAxes` is one instruction, `ret`. Had it derived from
+`UIScreen` instead, whose `TranslateAxes` is `axes = null`, inspecting an item would stop the
+player dead -- and the mod's `IsInventoryScreen` instance check would **not** have covered it,
+because the prefix would have been running against a different type. That failure would have
+looked like "movement randomly stops sometimes", which is the worst shape of bug to diagnose.
+
+So when a new stacked window is reported as freezing the player, the question to ask first is
+**which base class it has**, not what it does.
+
+Two supporting details, both read rather than assumed:
+
+- `Window<T>.TranslateCommand` returns `1` for `Escape` (55), after playing a UI sound and
+  closing itself, and `0` for everything else. So Escape closes just the inspect window, the
+  inventory screen underneath never sees it, and commands otherwise pass down to the inventory
+  screen which removes the weapon ones as usual.
+- `Window<T>.ShouldLockCursor` returns `2` (ShowCursor), so the cursor stays available.
+
+### The one that looked dangerous and was not
+
+`EFT.UI.ItemObserveScreen'2` overrides `TranslateAxes` with 25 instructions and **is** a
+`UIScreen`, so it looked like a screen that would both block movement and dodge the patch. It
+does neither:
+
+```
+if (!rotatingPreview) return;                                  // array untouched
+_weaponPreview.Rotate(axes[TurnX] * 2, -axes[TurnY] * 2, -30, 30);
+UpdatePositions();
+```
+
+It never nulls. It reads the turn axes to spin the 3D preview and passes everything on. And it is
+not the Inspect window anyway -- only `EditBuildScreen` and `WeaponModdingScreen` derive from it.
+Worth keeping because it is a good example of an override that looks like a block and is not.
+
 ## The tabs question
 
 Every tab along the top of the inventory is `EFT.UI.EInventoryTab`: `Overall, Gear, Health,
@@ -220,12 +265,13 @@ src/InventoryWalker/
   InventoryAxisPatch.cs   the one Harmony prefix, and the engaged/disengaged log line
   InventoryWalkerPlugin.cs  BepInPlugin, config binding, manual patch
 
-tests/InventoryWalker.Tests/   xunit, 77 tests
+tests/InventoryWalker.Tests/   xunit, 97 tests
   InputPipeline.cs        a model of the per frame delivery, written from the IL: axes, the
                           command list, and the cursor combination
   AxisGateTests.cs        the axis map, the filter, the gate truth table
   TransitionTests.cs      the brief's six cases, plus no-latch and the vanilla fallbacks
   InteractionTests.cs     cursor, clicks, drags and context menus while walking
+  InspectAndContextMenuTests.cs   the windows that stack on top, and the one that still blocks
 ```
 
 `AxisGate.cs` is the only file with no game dependency, and the test project **links it** rather

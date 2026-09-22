@@ -128,8 +128,36 @@ public sealed class InputPipeline
     /// </summary>
     public string Tab { get; set; } = "Gear";
 
+    /// <summary>
+    /// An item inspection window, <c>EFT.UI.InfoWindow</c>, which derives from
+    /// <c>Window&lt;T&gt;</c> and so is a real input node stacked above the inventory.
+    ///
+    /// It is transparent to movement, and that is luck rather than design: <c>Window.TranslateAxes</c>
+    /// is a bare <c>ret</c>, so unlike a screen it never nulls the array. Had InfoWindow derived
+    /// from UIScreen instead, inspecting an item would freeze the player and the mod's instance
+    /// check would not have covered it.
+    /// </summary>
+    public bool InspectWindowOpen { get; set; }
+
+    /// <summary>
+    /// A right click context menu, <c>EFT.UI.SimpleContextMenu</c>. It derives from
+    /// <c>UIElement</c>, not from <c>InputNode</c>, so it is not in the input tree at all and
+    /// cannot affect axes, commands or the cursor. The pipeline ignores it for that reason.
+    /// </summary>
+    public bool ContextMenuOpen { get; set; }
+
+    /// <summary>
+    /// Some other screen stacked on top, a modal dialog for instance. A screen nulls the axes,
+    /// and this mod deliberately does not override that: something that takes over the screen
+    /// should still stop the player.
+    /// </summary>
+    public bool BlockingScreenOpen { get; set; }
+
     /// <summary>The cursor state the last frame settled on.</summary>
     public int Cursor { get; private set; } = CursorResult.Ignore;
+
+    /// <summary>Whether an inspect window closed itself this frame, from Escape.</summary>
+    public bool InspectWindowClosedThisFrame { get; private set; }
 
     /// <summary>The commands that survived to reach the player's node on the last frame.</summary>
     public IReadOnlyList<int> CommandsReachingPlayer { get; private set; } = [];
@@ -163,23 +191,51 @@ public sealed class InputPipeline
         float[]? threaded = _axes;
         int cursor = CursorResult.Ignore;
         ScreenClosedThisFrame = false;
+        InspectWindowClosedThisFrame = false;
 
-        // 2 and 3. the screen node, when the inventory is open. Visited before the player.
+        // 2. nodes stacked above the inventory, visited first because the tree runs newest first.
+
+        // A modal screen behaves like any screen: it nulls, and everything below is skipped.
+        if (BlockingScreenOpen)
+        {
+            TranslateCommandsAtTheScreen(commands);
+            threaded = null;
+            cursor = Math.Max(cursor, CursorResult.ShowCursor);
+        }
+
+        // An inspect window. Window<T>.TranslateCommand consumes Escape to close itself and
+        // passes everything else; Window<T>.TranslateAxes is a bare ret, so the array survives.
+        if (InspectWindowOpen && threaded is not null)
+        {
+            if (commands.Remove(GameCommand.Escape))
+            {
+                InspectWindowClosedThisFrame = true;
+            }
+
+            cursor = Math.Max(cursor, CursorResult.ShowCursor);
+        }
+
+        // ContextMenuOpen is deliberately not consulted: a UIElement is not in the input tree.
+
+        // 3. the inventory screen node. Its commands and its cursor answer run whatever the axes
+        // are doing; only TranslateAxes sits behind the null check, which is the shape of
+        // InputNode.TranslateInput and the reason the mod cannot reach the cursor.
         if (InventoryOpen)
         {
             TranslateCommandsAtTheScreen(commands);
 
-            if (AxisGate.ShouldPassThrough(ModEnabled, isInventoryScreen: true, RaidPlayerPresent))
+            if (threaded is not null)
             {
-                AxisGate.KeepMovementOnly(threaded);
-            }
-            else
-            {
-                threaded = null; // vanilla UIScreen.TranslateAxes
+                if (AxisGate.ShouldPassThrough(ModEnabled, isInventoryScreen: true, RaidPlayerPresent))
+                {
+                    AxisGate.KeepMovementOnly(threaded);
+                }
+                else
+                {
+                    threaded = null; // vanilla UIScreen.TranslateAxes
+                }
             }
 
-            // Always, and outside the axes null check. This is why the mod cannot affect the
-            // cursor even though it changes whether the player's node sees the axes.
             cursor = Math.Max(cursor, CursorResult.ShowCursor);
         }
 

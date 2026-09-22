@@ -19,6 +19,8 @@ item would be unusable.
 - The inventory's opening and closing animation is untouched.
 - The inventory stays fully usable. Click items, drag and drop, manage equipment, open context
   menus, switch tabs, all while walking. None of it interrupts a held key.
+- Right click menus and Inspect windows too. Open an item's stats, read them, close them again,
+  all while walking, and start or stop moving freely with the window open.
 
 Out of raid, nothing changes. The hideout character screen is the same screen internally, so the
 mod checks for a live raid player before doing anything.
@@ -95,6 +97,11 @@ every command that is not on a five item allow-list before the player's node is 
 click never becomes a trigger pull and right click never becomes aim down sights. Sprint, jump and
 crouch are removed by the same rule, which is why this is WASD only. The mod patches the axis path
 and touches the command path nowhere, so all of that is the game's own behaviour, unchanged.
+
+Right click menus and Inspect windows are the same story from a different direction. A context
+menu is not part of the input system at all, so it changes nothing. An Inspect window is, but the
+kind of node it is passes the input straight through rather than swallowing it, so the player
+keeps moving underneath it and Escape closes just that window.
 
 What that leaves is the thing worth saying to a player: you can drag a magazine across your rig
 while walking, and the drag will not swing your camera, will not fire your gun, and will not drop
