@@ -147,6 +147,44 @@ public class InteractionTests
         Assert.Equal(reference, pipe.Frame(Held.ForwardLeft, Mouse.Still));
     }
 
+    /// <summary>
+    /// Dragging while moving in each of the eight directions, not just the two the tests above
+    /// happen to use. A drag holds a mouse button and moves the mouse at once, which is the
+    /// densest input the inventory produces, so it is the one worth running against every
+    /// direction rather than a representative one.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false, false, false, 0, 1)]
+    [InlineData(false, true, false, false, -1, 0)]
+    [InlineData(false, false, true, false, 0, -1)]
+    [InlineData(false, false, false, true, 1, 0)]
+    [InlineData(true, true, false, false, -1, 1)]
+    [InlineData(true, false, false, true, 1, 1)]
+    [InlineData(false, true, true, false, -1, -1)]
+    [InlineData(false, false, true, true, 1, -1)]
+    public void DraggingWhileMovingInAnyDirectionKeepsThatDirection(
+        bool w, bool a, bool s, bool d, float x, float y)
+    {
+        Held held = new(w, a, s, d);
+        InputPipeline pipe = new() { InventoryOpen = true };
+
+        // pick the item up, move it, drop it, all while walking
+        PlayerInput pickUp = pipe.Frame(held, Mouse.Clicking);
+        PlayerInput move = pipe.Frame(held, Mouse.Dragging);
+        PlayerInput drop = pipe.Frame(held, Mouse.Still);
+
+        foreach (PlayerInput input in new[] { pickUp, move, drop })
+        {
+            Assert.True(input.Delivered);
+            Assert.Equal(x, input.MoveX);
+            Assert.Equal(y, input.MoveY);
+            Assert.False(input.CameraTurned);
+        }
+
+        Assert.Empty(pipe.CommandsReachingPlayer);
+        Assert.Equal(CursorResult.ShowCursor, pipe.Cursor);
+    }
+
     /// <summary>A right click opens a context menu, and is otherwise the same story.</summary>
     [Fact]
     public void OpeningAContextMenuDoesNotInterruptHeldMovement()

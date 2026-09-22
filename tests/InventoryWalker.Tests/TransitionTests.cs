@@ -87,6 +87,77 @@ public class TransitionTests
     }
 
     /// <summary>
+    /// Case 4, widened. Every direction can be started from a standstill with the inventory
+    /// already open, not only the three the case above happens to walk through.
+    ///
+    /// Worth its own test because "open it while stationary, then start moving" and "open it
+    /// while already moving" are different orderings of the same two events, and a design that
+    /// carried any state across the transition could easily get one right and the other wrong.
+    /// This one has no state to get wrong, and this is what says so.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false, false, false, 0, 1)]
+    [InlineData(false, false, true, false, 0, -1)]
+    [InlineData(false, true, false, false, -1, 0)]
+    [InlineData(false, false, false, true, 1, 0)]
+    [InlineData(true, true, false, false, -1, 1)]
+    [InlineData(true, false, false, true, 1, 1)]
+    [InlineData(false, true, true, false, -1, -1)]
+    [InlineData(false, false, true, true, 1, -1)]
+    public void EveryDirectionCanBeStartedFromAStandstillInsideTheInventory(
+        bool w, bool a, bool s, bool d, float x, float y)
+    {
+        InputPipeline pipe = new() { InventoryOpen = true };
+
+        // standing still, inventory already open, nothing held
+        Assert.True(pipe.Frame(Held.None).IsStationary);
+
+        // press the direction without ever having moved beforehand
+        PlayerInput moving = pipe.Frame(new Held(w, a, s, d));
+        Assert.True(moving.Delivered);
+        Assert.Equal(x, moving.MoveX);
+        Assert.Equal(y, moving.MoveY);
+
+        // and release, still inside the inventory
+        Assert.True(pipe.Frame(Held.None).IsStationary);
+    }
+
+    /// <summary>
+    /// Closing while holding any direction, where the movement began inside the inventory rather
+    /// than before it opened. The direction has to survive the close without a re-press.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false, false, false, 0, 1)]
+    [InlineData(false, true, false, false, -1, 0)]
+    [InlineData(false, false, true, false, 0, -1)]
+    [InlineData(false, false, false, true, 1, 0)]
+    [InlineData(true, true, false, false, -1, 1)]
+    [InlineData(true, false, false, true, 1, 1)]
+    [InlineData(false, true, true, false, -1, -1)]
+    [InlineData(false, false, true, true, 1, -1)]
+    public void ADirectionStartedInsideTheInventorySurvivesClosingIt(
+        bool w, bool a, bool s, bool d, float x, float y)
+    {
+        Held held = new(w, a, s, d);
+        InputPipeline pipe = new() { InventoryOpen = true };
+
+        Assert.True(pipe.Frame(Held.None).IsStationary);
+        PlayerInput inside = pipe.Frame(held);
+
+        // Tab closes the screen: the command clears the command list and never touches the axes
+        pipe.Frame(held, Mouse.Still, 0f, GameCommand.ToggleInventory);
+        Assert.True(pipe.ScreenClosedThisFrame);
+        pipe.InventoryOpen = false;
+
+        PlayerInput outside = pipe.Frame(held);
+        Assert.True(outside.Delivered);
+        Assert.Equal(x, outside.MoveX);
+        Assert.Equal(y, outside.MoveY);
+        Assert.Equal(inside.MoveX, outside.MoveX);
+        Assert.Equal(inside.MoveY, outside.MoveY);
+    }
+
+    /// <summary>
     /// Case 5. Switch tabs while holding a direction.
     ///
     /// Weak as a test and honest about it: the pipeline ignores the tab entirely, so this asserts

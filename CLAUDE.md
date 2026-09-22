@@ -220,7 +220,7 @@ src/InventoryWalker/
   InventoryAxisPatch.cs   the one Harmony prefix, and the engaged/disengaged log line
   InventoryWalkerPlugin.cs  BepInPlugin, config binding, manual patch
 
-tests/InventoryWalker.Tests/   xunit, 53 tests
+tests/InventoryWalker.Tests/   xunit, 77 tests
   InputPipeline.cs        a model of the per frame delivery, written from the IL: axes, the
                           command list, and the cursor combination
   AxisGateTests.cs        the axis map, the filter, the gate truth table
@@ -321,7 +321,9 @@ have stopped `Player.Move` and do not. All four are written up above.
 
 What did change is the test model, which previously represented only the axes and so left those
 claims living in prose. `InputPipeline` now carries the command list and the cursor as well, and
-`InteractionTests` holds the new requirement. 53 tests.
+`InteractionTests` holds the new requirement. Widened afterwards to run every direction through
+start-from-standstill, close-while-held and drag-while-moving rather than a representative one or
+two. 77 tests.
 
 The lesson worth keeping: **a requirement that turns out to need no code still needs the reading.**
 Three of the four checks above had a plausible failure mode, and `IsAxesIgnored` in particular
