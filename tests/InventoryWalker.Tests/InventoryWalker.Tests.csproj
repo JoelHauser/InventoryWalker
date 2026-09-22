@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!--
+    Linked rather than project referenced. The plugin targets net472 against BepInEx and Unity,
+    which a test host cannot load, so the pure half is compiled into the test assembly directly.
+    AxisGate.cs is the only file in the plugin with no game dependency, and keeping it that way
+    is what makes this possible.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\src\InventoryWalker\AxisGate.cs" Link="AxisGate.cs" />
+  </ItemGroup>
+
+</Project>
