@@ -17,6 +17,8 @@ item would be unusable.
 - Every direction and combination, diagonals included.
 - Opening and closing while a key is already held. You never have to release and press again.
 - The inventory's opening and closing animation is untouched.
+- The inventory stays fully usable. Click items, drag and drop, manage equipment, open context
+  menus, switch tabs, all while walking. None of it interrupts a held key.
 
 Out of raid, nothing changes. The hideout character screen is the same screen internally, so the
 mod checks for a live raid player before doing anything.
@@ -77,6 +79,26 @@ whether the array reaches the player, never what is in it. There is no key-down 
 movement path to miss, so a held key needs no re-press; and because nothing is latched anywhere,
 releasing a key stops you on that frame. The mod stores no key state at all, which is what makes
 stuck movement structurally impossible rather than merely unlikely.
+
+## Why the inventory still works normally
+
+Your mouse is not shared with the camera, and your clicks are not shared with the trigger. Those
+are two separate paths in the client, and the mod is on neither of them.
+
+The cursor is decided by `ShouldLockCursor`, which every node answers on every frame and which the
+game resolves by taking the highest answer. The screen asks to show the cursor, the player asks to
+lock it, and showing wins. That question is asked outside the branch this mod patches, so the mod
+cannot affect it even though it changes what the player's node receives.
+
+Clicks are commands rather than axes, and travel in a different list. The inventory screen removes
+every command that is not on a five item allow-list before the player's node is reached, so left
+click never becomes a trigger pull and right click never becomes aim down sights. Sprint, jump and
+crouch are removed by the same rule, which is why this is WASD only. The mod patches the axis path
+and touches the command path nowhere, so all of that is the game's own behaviour, unchanged.
+
+What that leaves is the thing worth saying to a player: you can drag a magazine across your rig
+while walking, and the drag will not swing your camera, will not fire your gun, and will not drop
+the key you are holding.
 
 ## Known limitations
 

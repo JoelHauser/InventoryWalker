@@ -140,6 +140,65 @@ commands (65, 66) are all removed while the screen is open, and this mod does no
 that. Note also that the closing path returns `2` and clears *commands*; it never touches the
 axes array, which is one more reason closing cannot interrupt a held direction.
 
+## The second gate that could have killed this, and did not
+
+`PlayerInputTranslator.TranslateAxes` has an early return **before** `Player.Move`:
+
+```
+if (MovementContext.IsAxesIgnored) return;
+if (MovementContext.BlindFire == 0) Player.Move(...)
+```
+
+So there was a live possibility that opening the inventory sets one of those and the passthrough
+achieves nothing. It does not, and both halves were checked rather than assumed:
+
+- **`IsAxesIgnored`** is written in exactly three places in the whole assembly, all of them found
+  by sweeping every instruction operand for the name: `NarrateGame`'s coroutine and two `BTRView`
+  coroutines. Cutscenes and riding the BTR. Nothing to do with the inventory, and both of those
+  *should* still stop the player, so leave them alone.
+- **`BlindFire`** is set to 0 by `Player.SetInventoryOpened` itself (IL_00A2), which is the call
+  the inventory makes on open. So the guard is satisfied on exactly the path this mod cares about.
+
+`SetInventoryOpened` otherwise exits any mounted state, sets `_isInventoryOpened`, tells the hands
+controller, force stops animated interactions and starts `_waitInventoryCoroutine`. That coroutine
+waits on the hands animator's state and then calls `PlayerAnimator.SetInventory(true)` and
+`OnInventoryInteraction(true, false)`. It is the **opening animation** and nothing else; there is
+no movement check anywhere in it, so moving does not cancel the inventory.
+
+## The cursor and the clicks are on paths this mod is not on
+
+Both halves of "keep the inventory usable while walking" are vanilla behaviour that the mod must
+avoid breaking, rather than behaviour it provides. Worth having read, because "the mod does
+nothing here" only reassures once it has been checked.
+
+### The cursor
+
+`ECursorResult` is `0 Ignore, 1 LockCursor, 2 ShowCursor`. `UIScreen.ShouldLockCursor` returns 2,
+`PlayerOwner.ShouldLockCursor` returns 1, and `InputNode.TranslateInput` combines by taking the
+**maximum** (IL_005F..IL_0071: `if (*shouldLockCursor < mine) *shouldLockCursor = mine`). So
+ShowCursor wins whatever the visit order.
+
+The load bearing detail: `ShouldLockCursor()` is called at **IL_0053, outside** the
+`if (axes != null)` branch at IL_0042. The mod's prefix lives inside that branch. So making the
+player's node reachable for axes cannot change the cursor, and the cursor is the same with the mod
+on or off. `InputManager.Update` then computes `visible = !(result == 1)`, so result 2 shows it.
+
+### The clicks
+
+Mouse buttons raise **commands**, not axes, and commands travel in a separate list that this mod
+never touches. `InventoryScreen.TranslateCommand` closes the screen on `Escape` (55) and
+`ToggleInventory` (36) returning 2, and sends everything else to `GetDefaultBlockResult`, which
+removes anything outside the five item allow-list. `ToggleShooting` (1) and
+`ToggleAlternativeShooting` (3) are therefore gone before the player's node is reached.
+
+Note the closing path returns 2, which clears the **command** list and never touches the axes
+array. That is one more reason closing cannot interrupt a held direction.
+
+Also checked, because it was the remaining way a click could reach the weapon: `PlayerOwner`
+calls a hands input translator's `TranslateAxes` as well as the player's. Every concrete hands
+translator (`` through ``) has a **one instruction** `TranslateAxes`, a bare `ret`.
+Only `` does anything with axes. So nothing in the hands chain can act on what we pass.
+
 ## The tabs question
 
 Every tab along the top of the inventory is `EFT.UI.EInventoryTab`: `Overall, Gear, Health,
@@ -161,10 +220,12 @@ src/InventoryWalker/
   InventoryAxisPatch.cs   the one Harmony prefix, and the engaged/disengaged log line
   InventoryWalkerPlugin.cs  BepInPlugin, config binding, manual patch
 
-tests/InventoryWalker.Tests/   xunit, 35 tests
-  InputPipeline.cs        a model of the per frame delivery, written from the IL
+tests/InventoryWalker.Tests/   xunit, 53 tests
+  InputPipeline.cs        a model of the per frame delivery, written from the IL: axes, the
+                          command list, and the cursor combination
   AxisGateTests.cs        the axis map, the filter, the gate truth table
   TransitionTests.cs      the brief's six cases, plus no-latch and the vanilla fallbacks
+  InteractionTests.cs     cursor, clicks, drags and context menus while walking
 ```
 
 `AxisGate.cs` is the only file with no game dependency, and the test project **links it** rather
@@ -250,3 +311,18 @@ In rough order of risk:
 2026-09-22: **0.1.0**, first cut. Built clean at 0 warnings, 35 tests, references clean, packed
 to `releases\InventoryWalker_V0.1.0.zip`. Never launched. Version deliberately not 1.0.0 -- in
 this family of repos that is earned by a live run, not by a build.
+
+Then the user added a requirement: the inventory must stay fully interactive while walking, with
+the cursor usable, clicks landing on items rather than the trigger, and drags not disturbing a
+held key. **It needed no code.** Every part of it was already true, for reasons on paths the mod
+is not on, and the work was verifying that rather than building it: the cursor combination, the
+command allow-list, the empty hands translators, and the two gates in the translator that could
+have stopped `Player.Move` and do not. All four are written up above.
+
+What did change is the test model, which previously represented only the axes and so left those
+claims living in prose. `InputPipeline` now carries the command list and the cursor as well, and
+`InteractionTests` holds the new requirement. 53 tests.
+
+The lesson worth keeping: **a requirement that turns out to need no code still needs the reading.**
+Three of the four checks above had a plausible failure mode, and `IsAxesIgnored` in particular
+would have made the whole mod silently do nothing.
