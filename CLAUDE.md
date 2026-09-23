@@ -389,6 +389,11 @@ In rough order of risk:
   Piping a here-string adds a BOM in Windows PowerShell 5.1.
 - **The Forge forbids mods substantially written by AI agents.** The user has acknowledged this
   for their other repos; do not re-raise it.
+- **There is one GitHub release, and it is edited in place.** On 2026-09-22 the user had the
+  0.1.0 release overwritten with 0.3.0, rather than a new release alongside it. The same release
+  object was retagged `v0.3.0` and retitled, its notes were rewritten, and its asset was replaced.
+  The bare `v0.1.0` git tag was left pointing at `95efa28` as history. Ask before assuming the
+  next version gets the same treatment.
 
 ## Where this was left off
 
@@ -420,8 +425,8 @@ on Inspect in a way the patch does not cover.
 
 ### The state as it stands
 
-0.1.0: 97 tests, 0 warnings, published as a GitHub release. **Run in game 2026-09-22: the prefix
-fired and the player did not move.** The second gate is the cause (see the top of this file).
+0.1.0: 97 tests, 0 warnings, published as a GitHub release, which 0.3.0 later overwrote (see
+Publishing). **Run in game 2026-09-22: the prefix fired and the player did not move.** The second gate is the cause (see the top of this file).
 
 0.2.0: adds `OwnerAxesPatch`. The test model now has the owner's flag, and
 `OwnerGateTests.TheScreenPatchAloneLeavesThePlayerStandingStill` reproduces the 0.1.0 result. 109
@@ -430,7 +435,8 @@ installed on `H:\SPT4.1.X`. **Run in game 2026-09-22: works** (user report: "it 
 
 0.3.0: adds the loot range (`LootRange.cs`), at the user's request. Looting a bag, body or container
 and walking more than 3 m (config **Loot range in metres**, 0 = off) from it closes the screen.
-118 tests, 0 warnings. **Not yet run in game.**
+118 tests, 0 warnings. It is the published GitHub release (`v0.3.0`, which replaced 0.1.0), with walking
+confirmed in game. **The loot range is not yet run in game.**
 
 How it is built, all read off the live assembly:
 

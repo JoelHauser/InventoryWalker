@@ -10,9 +10,10 @@ Mouse look, leaning and sprinting stay blocked while the inventory is open, exac
 in vanilla. Your mouse belongs to the cursor there, and the camera swinging while you drag an
 item would be unusable.
 
-> **0.1.0 did not work in game.** It removed one of the two things that freeze you with the
-> inventory open. 0.2.0 removed both and walks in game. **0.3.0 adds the loot range below and has
-> not been run in the game yet.** Client side only; nothing is written to your profile.
+> **The current release is 0.3.0.** It replaces the 0.1.0 release, which did not work in game
+> because it removed only one of the two things that freeze you with the inventory open. Walking
+> with the inventory open has been tested in game and works. **The loot range, new in 0.3.0, has
+> not been tested in game yet.** Client side only; nothing is written to your profile.
 
 ## What it covers
 
