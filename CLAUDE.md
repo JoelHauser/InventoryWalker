@@ -406,11 +406,14 @@ In rough order of risk:
   Piping a here-string adds a BOM in Windows PowerShell 5.1.
 - **The Forge forbids mods substantially written by AI agents.** The user has acknowledged this
   for their other repos; do not re-raise it.
-- **There is one GitHub release, and it is edited in place.** On 2026-09-22 the user had the
-  0.1.0 release overwritten with 0.3.0, rather than a new release alongside it. The same release
+- **Releases were edited in place once, and are not any more.** On 2026-09-22 the user had the
+  0.1.0 release overwritten with 0.3.0, rather than a new release alongside it: the same release
   object was retagged `v0.3.0` and retitled, its notes were rewritten, and its asset was replaced.
-  The bare `v0.1.0` git tag was left pointing at `95efa28` as history. Ask before assuming the
-  next version gets the same treatment.
+  The bare `v0.1.0` git tag was left pointing at `95efa28` as history. On 2026-09-30 the user
+  asked for 0.3.1 to be pushed **and** for a release of its own, so `v0.3.1` is a second release
+  object and `v0.3.0` was left standing. Two releases now; the in-place edit was a one-off.
+  `gh release create <tag> <zip> --title ... --notes-file ... --latest`, with the notes file
+  written through `UTF8Encoding($false)` like a commit message.
 
 ## Where this was left off
 
@@ -535,6 +538,11 @@ rule with no tunable in it.
 The opening log line now carries the anchor's distance at opening, because that single number
 identifies this class of bug on sight and not having it is what made the report take a round trip.
 
-125 tests, 0 warnings. **Still not run in game** -- the loot range never has been, in either
-version. What the fix predicts: a fraction of a metre on the opening line for a body rather than
-metres, and a close at the configured distance from both numbers.
+125 tests, 0 warnings, packed to `releases\InventoryWalker_V0.3.1.zip`, pushed as `129add8` and
+published as its own GitHub release (`v0.3.1`, 2026-09-30), with `v0.3.0` left standing.
+
+**Still not run in game** -- the loot range never has been, in either version, and this box has
+`C:\HUH` and no `H:`, so it could not be. What the fix predicts, to check against a raid: a
+fraction of a metre on the opening line for a body rather than metres, and a close at the
+configured distance from both numbers. A reply to issue #1 was drafted for the user to post; the
+mod page itself has not been updated.
