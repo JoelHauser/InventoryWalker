@@ -414,6 +414,18 @@ In rough order of risk:
   object and `v0.3.0` was left standing. Two releases now; the in-place edit was a one-off.
   `gh release create <tag> <zip> --title ... --notes-file ... --latest`, with the notes file
   written through `UTF8Encoding($false)` like a commit message.
+- **A point release's notes are only what it fixed.** 0.3.1's first draft opened with the mod's
+  pitch, feature list, install and known limitations, carried over from 0.3.0, and the user had it
+  cut back: *"the 0.3.1 update notes should just be what the update fixed not a whole description
+  of the mod"*. Somebody reading a patch release already has the mod. Lead with the one line
+  saying which part changed, then the bug as reported (with the log line or symptom), the cause,
+  what changed, and the workaround for anybody staying on the old version. Keep the
+  tested/not-tested-in-game line; that goes in every release in this family.
+- **The mod is published on sp-mod.com, which is where bug reports arrive.**
+  https://sp-mod.com/mod/3058/inventory-walker, and its issue tracker at `/issues`. GitHub has no
+  issues on it. Pushing a commit and cutting a GitHub release does **not** update the mod page or
+  answer the reporter -- both are the user's to do, and worth saying so rather than implying the
+  release closed the loop.
 
 ## Where this was left off
 
@@ -544,5 +556,13 @@ published as its own GitHub release (`v0.3.1`, 2026-09-30), with `v0.3.0` left s
 **Still not run in game** -- the loot range never has been, in either version, and this box has
 `C:\HUH` and no `H:`, so it could not be. What the fix predicts, to check against a raid: a
 fraction of a metre on the opening line for a body rather than metres, and a close at the
-configured distance from both numbers. A reply to issue #1 was drafted for the user to post; the
-mod page itself has not been updated.
+configured distance from both numbers.
+
+### Still open from 2026-09-30, and it is not in this repo
+
+- **Issue #1 has no reply on it.** A draft was written for the user to post and they have it; the
+  thread on sp-mod is the only place the reporter will see an answer.
+- **The sp-mod mod page still offers 0.3.0.** The zip has to be uploaded there as well; the
+  GitHub release does not feed it.
+- **Nobody has looted a body with 0.3.1 installed.** Installing wants the live box
+  (`pack.ps1 -SPTPath H:\SPT4.1.X -Install`), which this session did not have.
