@@ -18,9 +18,11 @@ namespace InventoryWalker
     /// whether the screen is still open. The plain Tab inventory never goes through that method,
     /// so it is never range limited.
     ///
-    /// The distance is measured from the world object whose loot it is (a bag or loose item, a
-    /// body, a container). If that cannot be matched, it is measured from where the player stood
-    /// when they opened it, which is within arm's reach of the loot anyway.
+    /// The distance is measured from two places at once: the world object whose loot it is (a bag
+    /// or loose item, a body, a container) and where the player stood when they opened it. It
+    /// takes being out of range of both to close, because the object's anchor can be wrong and the
+    /// opening position cannot -- see <see cref="AxisGate.ShouldCloseLoot"/>. If no object can be
+    /// matched at all, the opening position is used for both.
     /// </summary>
     internal static class LootRange
     {
@@ -33,6 +35,12 @@ namespace InventoryWalker
         private static Component _player;
         private static Transform _anchor;
         private static Vector3 _anchorPosition;
+
+        /// <summary>
+        /// Where the player stood when the game opened this loot. The pivot that cannot be wrong:
+        /// the game opens loot on an interaction, so it is within arm's reach of the loot.
+        /// </summary>
+        private static Vector3 _openedAt;
 
         internal static void SetLogger(ManualLogSource log)
         {
@@ -61,13 +69,19 @@ namespace InventoryWalker
                 int session = ++_session;
                 _active = true;
                 _player = player;
+                _openedAt = player.transform.position;
                 _anchor = GameTypes.FindLootAnchor(player, loot);
-                _anchorPosition = _anchor != null ? _anchor.position : player.transform.position;
+                _anchorPosition = _anchor != null ? _anchor.position : _openedAt;
 
                 if (_log != null)
                 {
+                    // The distance at opening is in the line on purpose: it is the number that
+                    // says whether the anchor is the loot or something metres away from it, and
+                    // issue #1 was diagnosed from not having it.
                     _log.LogInfo(_anchor != null
-                        ? "Loot opened; measuring the range from " + _anchor.name + "."
+                        ? "Loot opened; measuring the range from " + _anchor.name + ", "
+                          + Vector3.Distance(_openedAt, _anchorPosition).ToString("0.0")
+                          + " m away, and from where it was opened."
                         : "Loot opened; no world object matched it, measuring the range from where it was opened.");
                 }
 
@@ -119,8 +133,10 @@ namespace InventoryWalker
                     _anchorPosition = _anchor.position;
                 }
 
-                float distance = Vector3.Distance(_player.transform.position, _anchorPosition);
-                if (!AxisGate.ShouldCloseLoot(distance, range))
+                Vector3 here = _player.transform.position;
+                float distance = Vector3.Distance(here, _anchorPosition);
+                float fromOpening = Vector3.Distance(here, _openedAt);
+                if (!AxisGate.ShouldCloseLoot(distance, fromOpening, range))
                 {
                     return;
                 }
@@ -128,7 +144,8 @@ namespace InventoryWalker
                 _active = false;
                 if (_log != null)
                 {
-                    _log.LogInfo("Walked " + distance.ToString("0.0") + " m from the loot (range "
+                    _log.LogInfo("Walked " + distance.ToString("0.0") + " m from the loot and "
+                                 + fromOpening.ToString("0.0") + " m from where it was opened (range "
                                  + range.ToString("0.0") + " m); closing it.");
                 }
 

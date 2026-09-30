@@ -34,9 +34,11 @@ namespace InventoryWalker
         internal const string PlayerName = "EFT.Player";
         internal const string LootItemName = "EFT.Interactive.LootItem";
         internal const string LootableContainerName = "EFT.Interactive.LootableContainer";
+        internal const string InteractableObjectName = "EFT.Interactive.InteractableObject";
         internal const string ItemControllerName = "EFT.InventoryLogic.ItemController";
         internal const string ECommandName = "EFT.InputSystem.ECommand";
         internal const string ShowInventoryScreenLootName = "ShowInventoryScreenLoot";
+        internal const string TrackableTransformName = "TrackableTransform";
 
         /// <summary>
         /// <c>EftGamePlayerOwner.ShowInventoryScreenLoot(CompoundItem loot, Action callback, bool)</c>.
@@ -56,6 +58,15 @@ namespace InventoryWalker
         private static MethodInfo _rootItem;
         private static MethodInfo _translateCommand;
         private static object _toggleInventory;
+
+        /// <summary>
+        /// <c>InteractableObject.TrackableTransform</c>, the transform the game itself tracks an
+        /// interactable by. Optional: without it the range falls back to the object's root
+        /// transform, which is 0.3.0's behaviour and is wrong on bodies. Declared on the base and
+        /// invoked through reflection, which dispatches to the override, so a <c>Corpse</c>
+        /// answers with its pelvis.
+        /// </summary>
+        private static MethodInfo _trackableTransform;
 
         /// <summary>
         /// <c>UIScreen.TranslateAxes(ref float[])</c>. The method that nulls the axes. The first
@@ -230,6 +241,20 @@ namespace InventoryWalker
             Type itemController = AccessTools.TypeByName(ItemControllerName);
             _rootItem = itemController == null ? null : AccessTools.PropertyGetter(itemController, "RootItem");
 
+            // Optional, and deliberately not in the missing list below: losing it costs accuracy
+            // on bodies, not the feature.
+            Type interactable = AccessTools.TypeByName(InteractableObjectName);
+            _trackableTransform = interactable == null
+                ? null
+                : AccessTools.PropertyGetter(interactable, TrackableTransformName);
+            if (_trackableTransform == null)
+            {
+                log.LogWarning("Could not find " + InteractableObjectName + "." + TrackableTransformName
+                               + ", so the loot range measures from an object's root transform. On a body "
+                               + "that reads further away than the body is, and the range then measures "
+                               + "from where the loot was opened instead.");
+            }
+
             // Closing goes through the screen's own Tab handler, so it is the same close as a key
             // press: InventoryScreen.TranslateCommand(ToggleInventory) -> ScreenController.CloseScreen().
             _translateCommand = _inventoryScreen == null ? null : AccessTools.DeclaredMethod(_inventoryScreen, "TranslateCommand");
@@ -296,7 +321,30 @@ namespace InventoryWalker
             object itemOwner = ownerField?.GetValue(interactive);
             object root = itemOwner == null ? null : _rootItem.Invoke(itemOwner, null);
 
-            return root != null && ReferenceEquals(root, loot) ? interactive.transform : null;
+            return root != null && ReferenceEquals(root, loot) ? TrackedTransformOf(interactive) : null;
+        }
+
+        /// <summary>
+        /// The transform the game itself tracks this object by, falling back to its root.
+        ///
+        /// This is not <c>interactive.transform</c>, and that is the whole of issue #1.
+        /// <c>InteractableObject.TrackableTransform</c> is virtual and answers
+        /// <c>base.transform</c>, but <c>Corpse</c> overrides it with <c>_pelvis</c>, the ragdoll's
+        /// pelvis bone. A corpse's GameObject is placed once, at the position it was created at,
+        /// and the ragdoll then simulates in world space away from it -- a body flung by a grenade
+        /// leaves its root transform where it died. So on an AI body the root transform is not
+        /// where the body is, and the pelvis is.
+        ///
+        /// The comparison is Unity's, so a destroyed transform falls back rather than being
+        /// returned as a live one.
+        /// </summary>
+        private static UnityEngine.Transform TrackedTransformOf(UnityEngine.Component interactive)
+        {
+            UnityEngine.Transform tracked = _trackableTransform == null
+                ? null
+                : _trackableTransform.Invoke(interactive, null) as UnityEngine.Transform;
+
+            return tracked != null ? tracked : interactive.transform;
         }
 
         /// <summary>Closes the inventory screen exactly as pressing Tab would.</summary>

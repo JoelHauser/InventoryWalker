@@ -10,10 +10,10 @@ Mouse look, leaning and sprinting stay blocked while the inventory is open, exac
 in vanilla. Your mouse belongs to the cursor there, and the camera swinging while you drag an
 item would be unusable.
 
-> **The current release is 0.3.0.** It replaces the 0.1.0 release, which did not work in game
-> because it removed only one of the two things that freeze you with the inventory open. Walking
-> with the inventory open has been tested in game and works. **The loot range, new in 0.3.0, has
-> not been tested in game yet.** Client side only; nothing is written to your profile.
+> **The current release is 0.3.1**, which fixes the loot range closing instantly on scav and
+> other AI bodies ([issue #1](https://sp-mod.com/mod/3058/inventory-walker/issues/1)). Walking
+> with the inventory open has been tested in game and works; the loot range has not, in either
+> version. Client side only; nothing is written to your profile.
 
 ## What it covers
 
@@ -36,7 +36,7 @@ mod checks for a live raid player before doing anything.
 
 ## Install
 
-Download `InventoryWalker_V0.3.0.zip` from the
+Download `InventoryWalker_V0.3.1.zip` from the
 [releases page](https://github.com/JoelHauser/InventoryWalker/releases) and unzip it over your SPT
 folder, so that `InventoryWalker.dll` lands in `BepInEx\plugins`. Client side only; there is no
 server half and nothing is written to your profile.
@@ -48,8 +48,9 @@ Movement passing through to the player (inventory open in raid).
 Lifting the screen's ignore-input flag for the player's movement.
 ```
 
-Looting adds `Loot opened; measuring the range from <object>.`, and walking out of range adds
-`Walked X m from the loot (range 3.0 m); closing it.`
+Looting adds `Loot opened; measuring the range from <object>, 0.8 m away, and from where it was
+opened.`, and walking out of range adds `Walked X m from the loot and Y m from where it was
+opened (range 3.0 m); closing it.`
 
 If the plugin cannot find what it needs for walking, it says so at startup and patches nothing,
 leaving the game exactly as it was. If only the loot range cannot be set up, walking still works
@@ -142,8 +143,10 @@ the key you are holding.
 - **Sprint, jump, crouch and lean stay blocked.** Those are commands rather than axes, and the
   screen still consumes them. WASD only, which is what was asked for.
 - **Loot range is measured in a straight line** from the bag, body or container, so it includes
-  height. If the game ever opens loot without the mod being able to tell what it belongs to,
-  the range is measured from where you stood when you opened it, and the log says so.
+  height. It is measured from where you stood when you opened the loot as well, and it takes
+  being out of range of both to close, so a body whose position the game reports oddly costs you
+  a little extra leeway rather than closing the view in your face. If the mod cannot tell what
+  the loot belongs to at all, only the opening position is used, and the log says so.
 - **Scripted "no input" moments.** Cutscenes and a few scripted zones use the same flag the
   inventory does. With the inventory closed they stop you as normal. If one fires while your
   inventory is already open, you can still walk until you close it.

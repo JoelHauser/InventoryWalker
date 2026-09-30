@@ -21,7 +21,7 @@ namespace InventoryWalker
         public const string PluginName = "Inventory Walker";
 
         /// <summary>Must match the csproj's Version. Two places, and they have to agree.</summary>
-        public const string PluginVersion = "0.3.0";
+        public const string PluginVersion = "0.3.1";
 
         /// <summary>
         /// Exposed so the patch can read it without a singleton lookup on every frame. Null until

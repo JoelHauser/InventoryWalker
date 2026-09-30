@@ -5,10 +5,13 @@ patches, one per gate. No server half, nothing written to the profile.
 
 **0.1.0 was run in game on 2026-09-22 and did not work.** The prefix fired (its log line is in
 `LogOutput.log`) and the player stood still. There are two gates, and 0.1.0 opened only the
-first. See "The second gate, found by running it" below. 0.2.0 opens both and has **not** been
-run yet. The sibling repos' hardest lesson applied here in full: *an IL trace that predicts
-success is not evidence of success.* 97 tests passed for a mod that did nothing, because the test
-model was written from the same incomplete reading.
+first. See "The second gate, found by running it" below. 0.2.0 opens both and **works in game**,
+confirmed the same day. The sibling repos' hardest lesson applied here in full: *an IL trace that
+predicts success is not evidence of success.* 97 tests passed for a mod that did nothing, because
+the test model was written from the same incomplete reading.
+
+**The loot range (0.3.0, fixed in 0.3.1) has never been run in game**, and the one bug report
+this mod has is against it. See "0.3.1: the anchor was the wrong transform" near the bottom.
 
 ## The second gate, found by running it
 
@@ -300,10 +303,12 @@ src/InventoryWalker/
   GameTypes.cs            every game member, resolved by name at runtime, in one place
   InventoryAxisPatch.cs   gate 1: prefix on UIScreen.TranslateAxes, and the engaged log line
   OwnerAxesPatch.cs       gate 2: prefix+finalizer lifting GamePlayerOwner's ignore-input flag
+  LootRange.cs            the loot session: two pivots, ticked from Update, closed like Tab
   InventoryWalkerPlugin.cs  BepInPlugin, config binding, manual patches (both or neither)
 
-tests/InventoryWalker.Tests/   xunit, 109 tests
+tests/InventoryWalker.Tests/   xunit, 125 tests
   OwnerGateTests.cs       gate 2, including the 0.1.0 regression
+  LootRangeTests.cs       the range decision, including issue #1's instant close
   InputPipeline.cs        a model of the per frame delivery, written from the IL: axes, the
                           command list, and the cursor combination
   AxisGateTests.cs        the axis map, the filter, the gate truth table
@@ -355,6 +360,18 @@ instead. Half an hour went into that one; do not re-debug it.
 - **`Grid`-style reasoning about "which node consumes the input" was the wrong model.** Nothing
   consumes anything; a reference is set to null and every later node opts out. Read
   `TranslateInput` before theorising about priority.
+- **An object's `transform.position` is not where the object is.** A corpse's GameObject is
+  positioned once and its ragdoll simulates away from it, so `interactive.transform` read 6.3 m
+  from a body the player was standing on (issue #1). The game already had the answer in a virtual
+  property, `InteractableObject.TrackableTransform`, which `Corpse` overrides with its pelvis.
+  **When you need where a thing is, look for the member the game itself tracks it by** before
+  taking the transform you happen to be holding.
+- **A measurement with one reference point fails as hard as its reference point is wrong.** The
+  loot range closed instantly and made bodies unlootable, rather than merely misjudging a
+  distance. Adding a second pivot that *cannot* be wrong -- where the player stood when the game
+  opened the loot -- turned the worst case from "feature breaks the game" into "feature is a
+  little lenient". **Ask what the failure looks like when the input is wrong, not just whether it
+  is right.**
 
 ## Untested, and what to look for
 
@@ -448,7 +465,8 @@ How it is built, all read off the live assembly:
 - The anchor is `Player.InteractableObject`, accepted only if its `ItemOwner.RootItem` **is** `loot`.
   `ClientPlayer` overrides `Interact`, so the callback may be delayed, and the player may have
   looked away by then. If nothing matches, the range falls back to the player's position when they
-  opened it, and a log line says which was used.
+  opened it, and a log line says which was used. **0.3.0 then took that object's root transform,
+  which is wrong on bodies** -- see 0.3.1 below; it is `TrackableTransform` now.
 - The session ends when the game calls `callback`. The method's own exit action calls it on every
   close path (Tab, Esc, death, and the "another screen is up" bail), so nothing polls to find out
   whether the screen is still open.
@@ -458,6 +476,65 @@ How it is built, all read off the live assembly:
   `GamePlayerOwner.CloseInventoryIfOpen` is `ToggleScreen(Inventory)`. Nothing in the client calls
   it, and a toggle could open the screen instead of closing it, so it is not used.
 
-Log lines to check in a raid: `Loot opened; measuring the range from <object>.` on opening, and
-`Walked X m from the loot (range 3.0 m); closing it.` on walking away. The fallback wording
-(`no world object matched`) on a bag or body means the anchor match needs another look.
+Log lines to check in a raid: `Loot opened; measuring the range from <object>, 0.8 m away, and
+from where it was opened.` on opening, and `Walked X m from the loot and Y m from where it was
+opened (range 3.0 m); closing it.` on walking away. The fallback wording (`no world object
+matched`) on a bag or body means the anchor match needs another look, and an opening distance of
+more than a metre or so means the anchor is not where the loot is.
+
+### 0.3.1: the anchor was the wrong transform, and one pivot was the wrong design
+
+**sp-mod issue #1, from dalabengba6384, against 0.3.0**: looting a PMC body was fine, looting a
+scav body opened the view and closed it on the same frame, every time, so the body could not be
+looted at all. Their log line: `Walked 6.3 m from the loot (range 3.0 m); closing it.` while
+standing on the corpse. Their workaround is the right one to give anybody who hits it before they
+update: set **Loot range in metres** to 0.
+
+Two separate mistakes, both fixed:
+
+**The anchor.** 0.3.0 measured from `interactive.transform`, the interactable's root. Read off the
+never-launched `C:\HUH` assembly with `ilspycmd -t EFT.Interactive.Corpse`:
+
+- `InteractableObject.TrackableTransform` is **virtual** and returns `base.transform`.
+- `Corpse` overrides it: `public override Transform TrackableTransform => _pelvis;`
+- `_pelvis` is the ragdoll's pelvis bone, assigned in the corpse's init and dereferenced on the
+  next line (`_pelvis.gameObject.AddComponent<ProxyTransportee>()`), so it is never null for a
+  corpse that exists.
+- `CreateStillCorpse` sets `gameObject.transform.position = corpseJson.Position` **once**, and the
+  ragdoll then simulates in world space. The root stays where the body was created while the body
+  itself slides down a slope or gets flung by a grenade. So on an AI body the root transform is
+  not where the body is -- 6.3 m from it, in the reporter's raid.
+
+`GameTypes.TrackedTransformOf` reads `TrackableTransform` off the base type and invokes it, which
+dispatches to the override, so a corpse answers with its pelvis and everything else answers with
+its root exactly as before. Resolved **optionally**: if the name ever goes, the range logs a
+warning and falls back to the root rather than turning itself off.
+`LootRangeTests.AVirtualGetterResolvedOnTheBaseTypeStillReachesTheOverride` pins the reflection
+dispatch on a stand-in pair, since the game's types cannot be loaded in the test host.
+
+**The design.** One pivot meant a wrong pivot closed the loot immediately, which is the worst
+shape this failure could take: the feature did not misjudge a distance, it made a corpse
+unlootable. `AxisGate.ShouldCloseLoot` now takes two distances and closes only when **both** are
+out of range -- the anchor, and where the player stood when the game opened the loot. The second
+cannot be wrong, because the game only opens loot on an interaction. So:
+
+- At the instant of opening the second distance is zero, which makes an instant close
+  **structurally impossible** whatever the anchor says. That is the property the bug needed.
+- A wrong anchor can now only ever be **lenient**, never early.
+- The anchor is still what follows loot that moves, which a fixed opening position cannot do, so
+  a player riding a moving platform with the body they are looting keeps the view.
+
+The reporter proposed a different fix: on session start, if the anchor is already out of range,
+discard it as a bad pivot and measure from the opening position. That is sound and it fixes their
+case, but it leaves the milder version of the same bug alive -- an anchor 2.9 m off with a range
+of 3.0 is accepted, and the player then gets 0.1 m of walk before the view shuts in their face.
+Requiring both pivots needs no threshold and no constant measured off this box, and it covers the
+whole family. The sibling repos' lesson about a cap derived from one machine applies: prefer the
+rule with no tunable in it.
+
+The opening log line now carries the anchor's distance at opening, because that single number
+identifies this class of bug on sight and not having it is what made the report take a round trip.
+
+125 tests, 0 warnings. **Still not run in game** -- the loot range never has been, in either
+version. What the fix predicts: a fraction of a metre on the opening line for a body rather than
+metres, and a close at the configured distance from both numbers.

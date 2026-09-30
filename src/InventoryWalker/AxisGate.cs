@@ -85,10 +85,23 @@ namespace InventoryWalker
         /// <summary>
         /// Whether the player has walked far enough from the loot to close it. A range of zero or
         /// less turns the limit off. Strictly beyond, so standing exactly on the line keeps it open.
+        ///
+        /// Two pivots, and it takes both of them being out of range, because only one of them is
+        /// trustworthy. <paramref name="distanceFromOpening"/> is measured from where the player
+        /// stood when the game opened the loot, which is within arm's reach of the loot by
+        /// definition -- the game only opens it on an interaction. <paramref name="distanceToLoot"/>
+        /// is measured from the world object itself, which is exact when it is exact and
+        /// arbitrarily wrong when it is not: on an AI body the object's root transform stays where
+        /// the corpse was created while the ragdoll simulates away from it, so 0.3.0 read
+        /// <c>Walked 6.3 m from the loot</c> for a player standing on the body (issue #1).
+        ///
+        /// Requiring both means a wrong anchor can only ever be lenient, never early. And at the
+        /// instant of opening, distanceFromOpening is zero, so an immediate close is impossible
+        /// whatever the anchor says. That is the property the reported bug needed and did not have.
         /// </summary>
-        public static bool ShouldCloseLoot(float distance, float range)
+        public static bool ShouldCloseLoot(float distanceToLoot, float distanceFromOpening, float range)
         {
-            return range > 0f && distance > range;
+            return range > 0f && distanceToLoot > range && distanceFromOpening > range;
         }
 
         /// <summary>
